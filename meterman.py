@@ -170,7 +170,7 @@ def on_mqtt_message(client, userdata, msg):
       meter = {"readings": []}
       meters[meterid] = meter
     reading = message.get("reading")
-    if reading is None or reading[0]["vif"] != 255:
+    if reading is None or reading[0]["vif"] != 127:
       meter.update(message)
     if flags.arg.history: meter["readings"].append(message)
     state_updated()
