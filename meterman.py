@@ -117,6 +117,12 @@ def on_mqtt_connect(client, userdata, flags, reason_code, properties):
   # Subscribe to messages from meter gateways.
   client.subscribe("meter/data/#")
 
+def discard_reading(reading):
+ if reading is None: return False
+ if type(reading) is not list: return False
+ if len(reading) == 0: return False
+ return reading[0].get("vif") == 127
+
 # Handle meter messages and update global state.
 def on_mqtt_message(client, userdata, msg):
   #print("message", msg.topic, msg.payload)
@@ -170,8 +176,7 @@ def on_mqtt_message(client, userdata, msg):
       meter = {"readings": []}
       meters[meterid] = meter
     reading = message.get("reading")
-    if reading is None or reading[0]["vif"] != 127:
-      meter.update(message)
+    if not discard_reading(reading): meter.update(message)
     if flags.arg.history: meter["readings"].append(message)
     state_updated()
   elif op == "console":
@@ -188,12 +193,17 @@ mqttc.on_connect = on_mqtt_connect
 mqttc.on_message = on_mqtt_message
 mqttc.connect(flags.arg.mqtt, 1883, 60)
 
+def send_command(gw, msg):
+  control = gw.get("control")
+  if control is None: control = "meter/control/" + gw["gw"]
+  mqttc.publish(control, json.dumps(msg))
+
 @app.route("/meterman/reset", method="POST")
 def reset_request(request):
   gwid = request.param("gw")
   gw = gateways.get(gwid)
   if gw is None: return 404
-  mqttc.publish(gw["control"], json.dumps({"op": "reset"}))
+  send_command(gw, {"op": "reset"})
 
 @app.route("/meterman/timesync", method="POST")
 def reset_request(request):
@@ -201,7 +211,7 @@ def reset_request(request):
   gw = gateways.get(gwid)
   if gw is None: return 404
   ts = int(time.time())
-  mqttc.publish(gw["control"], json.dumps({"op": "timesync", "ts": ts}))
+  send_command(gw, {"op": "timesync", "ts": ts})
 
 @app.route("/meterman/upgrade", method="POST")
 def upgrade_request(request):
@@ -213,15 +223,15 @@ def upgrade_request(request):
   data = f.read();
   f.close()
 
-  print("upgrade", gwid, len(data), type(data))
   msg = {"op": "upgrade", "binary": data.hex()}
-  mqttc.publish(gw["control"], json.dumps(msg))
+  send_command(gw, msg)
 
 @app.route("/meterman/forget", method="POST")
 def forget_request(request):
   gwid = request.param("gw")
-  del gateways[gwid]
-  state_updated()
+  if gwid in gateways:
+    del gateways[gwid]
+    state_updated()
 
 @app.route("/meterman/command", method="POST")
 def command_request(request):
@@ -230,7 +240,7 @@ def command_request(request):
   gw = gateways.get(gwid)
   if gw is None: return 404
   msg = {"op": "command", "command": command}
-  mqttc.publish(gw["control"], json.dumps(msg))
+  send_command(gw, msg)
 
 @app.route("/meterman/config", method="POST")
 def config_request(request):
@@ -241,21 +251,21 @@ def config_request(request):
   print("config:", config)
 
   msg = {"op": "config", "config": config}
-  mqttc.publish(gw["control"], json.dumps(msg))
+  send_command(gw, msg)
 
 @app.route("/meterman/rescan", method="POST")
 def rescan_request(request):
   gwid = request.param("gw")
   gw = gateways.get(gwid)
   if gw is None: return 404
-  mqttc.publish(gw["control"], json.dumps({"op": "rescan"}))
+  send_command(gw, {"op": "rescan"})
 
 @app.route("/meterman/log", method="POST")
 def log_request(request):
   gwid = request.param("gw")
   gw = gateways.get(gwid)
   if gw is None: return 404
-  mqttc.publish(gw["control"], json.dumps({"op": "log"}))
+  send_command(gw, {"op": "log"})
 
 @app.route("/meterman/download")
 def down_request(request):
