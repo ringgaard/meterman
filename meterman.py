@@ -90,7 +90,6 @@ def state_updated():
   next_seq += 1
   state_upate.set()
   state_upate.clear()
-  #print(json.dumps(state, indent=2))
 
 @app.route("/meterman/state", method="GET")
 def state_request(request):

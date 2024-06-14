@@ -68,6 +68,7 @@ class MeterApp extends MdApp {
     this.current = gwid;
     let gw = this.current && this.database.gateways[this.current];
     this.find("#gateway").update(gw);
+    this.find("#gateways").update(this.database);
   }
 
   database_update(state) {
@@ -114,17 +115,20 @@ class MeterGateways extends MdCard {
   }
 
   onclick(e) {
-    let gwid = e.target.getAttribute("gw");
-    if (gwid) this.match("meter-app").select(gwid);
+    let gw = e.target.getAttribute("gw");
+    if (gw) this.match("meter-app").select(gw);
   }
 
   render() {
+    let selected = this.match("meter-app").current;
     let h = new Array();
     h.push("<md-card-toolbar>Gateways</md-card-toolbar>");
     let gateways = this.state && this.state.gateways;
     if (gateways) {
-      for (let gw of Object.values(gateways)) {
-        h.push(`<div class="entry" gw="${gw.gw}">${gw.gw}</div>`);
+      let gwlist = Object.values(gateways).sort((a, b) => b.ts - a.ts);
+      for (let gw of gwlist) {
+        let cls = "entry" + (gw.gw == selected ? " selected" : "");
+         h.push(`<div class="${cls}" gw="${gw.gw}">${gw.gw}</div>`);
       }
     }
     return h.join("");
@@ -137,6 +141,9 @@ class MeterGateways extends MdCard {
       }
       $ .entry {
         padding: 4px;
+      }
+      $ .selected {
+        font-weight: bold;
       }
       $ .entry:hover {
         background-color: #eeeeee;
@@ -204,8 +211,8 @@ class MeterGateway extends MdCard {
         <md-data-table id="metertab">
           <md-data-field field="meterid">Meter ID</md-data-field>
           <md-data-field field="manufacturer">Manufacturer</md-data-field>
-          <md-data-field field="type">Type</md-data-field>
           <md-data-field field="version">Version</md-data-field>
+          <md-data-field field="type">Type</md-data-field>
           <md-data-field field="bus">Bus</md-data-field>
           <md-data-field field="address">Address</md-data-field>
           <md-data-field field="reading" style="text-align: right">Reading</md-data-field>
