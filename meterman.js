@@ -38,12 +38,26 @@ function datestr(ts) {
 class MeterApp extends MdApp {
   onconnected() {
     this.monitor_updates();
+    this.attach(this.ontab, "click", "#tabs");
     this.attach(this.ondownload, "click", "#download");
+    this.find("#metertab").style.display = "none";
   }
 
   ondownload(e) {
     let url = this.database?.software;
     if (url) window.open(url);
+  }
+
+  ontab(e) {
+    let tab = e.target.id;
+    if (tab == "gwtab") {
+      this.find("#gatewaytab").style.display = "block";
+      this.find("#metertab").style.display = "none";
+    } else {
+      this.find("#gatewaytab").style.display = "none";
+      this.find("#metertab").style.display = "block";
+    }
+    this.database_update(this.database);
   }
 
   async monitor_updates() {
@@ -73,10 +87,10 @@ class MeterApp extends MdApp {
 
   database_update(state) {
     this.database = state;
-    this.find("#gateways").update(state);
+    this.find("#gateways")?.update(state);
     let gw = this.current && state.gateways[this.current];
     if (!gw) this.current = undefined;
-    this.find("#gateway").update(gw);
+    this.find("#gateway")?.update(gw);
   }
 
   render() {
@@ -85,13 +99,23 @@ class MeterApp extends MdApp {
         <md-toolbar-logo></md-toolbar-logo>
         <div id="title">Meter Manager</div>
         <md-spacer></md-spacer>
+        <md-tabs id="tabs" selected="#gwtab">
+          <md-tab id="gwtab">Gateways</md-tab>
+          <md-tab id="mtrtab">Meters</md-tab>
+        </md-tabs>
         <md-icon-button id="download" icon="download"></md-icon-button>
       </md-toolbar>
 
       <md-content>
-        <div id="cols">
-          <meter-gateways id="gateways"></meter-gateways>
-          <meter-gateway id="gateway"></meter-gateway>
+        <div id="gatewaytab">
+          <div id="cols">
+            <meter-gateways id="gateways"></meter-gateways>
+            <meter-gateway id="gateway"></meter-gateway>
+          </div>
+        </div>
+
+        <div id="metertab">
+          <meter-card></meter-card>
         </div>
       </md-content>
     `;
@@ -110,28 +134,28 @@ class MeterApp extends MdApp {
 Component.register(MeterApp);
 
 class MeterGateways extends MdCard {
-  onconnect() {
-    this.attach(this.onclick, "click");
-  }
-
-  onclick(e) {
-    let gw = e.target.getAttribute("gw");
-    if (gw) this.match("meter-app").select(gw);
-  }
-
   render() {
     let selected = this.match("meter-app").current;
     let h = new Array();
     h.push("<md-card-toolbar>Gateways</md-card-toolbar>");
     let gateways = this.state && this.state.gateways;
     if (gateways) {
-      let gwlist = Object.values(gateways).sort((a, b) => b.ts - a.ts);
+      let gwlist = Object.values(gateways).sort((a, b) => a.ts - b.ts);
       for (let gw of gwlist) {
         let cls = "entry" + (gw.gw == selected ? " selected" : "");
          h.push(`<div class="${cls}" gw="${gw.gw}">${gw.gw}</div>`);
       }
     }
     return h.join("");
+  }
+
+  onconnected() {
+    this.attach(this.onclick, "click");
+  }
+
+  onclick(e) {
+    let gw = e.target.getAttribute("gw");
+    if (gw) this.match("meter-app").select(gw);
   }
 
   static stylesheet() {
@@ -159,7 +183,7 @@ class MeterGateway extends MdCard {
   render() {
     let gw = this.state;
     if (!gw) return "";
-    let upsince = datestr(gw.ts);
+    let upsince = datestr(gw.upsince);
     let lastseen = datestr(gw.lastseen);
 
     let h = new Array();
@@ -208,7 +232,7 @@ class MeterGateway extends MdCard {
     h.push(`
       <div class="meters">
         <span class="title">Meters</span>
-        <md-data-table id="metertab">
+        <md-data-table id="metertable">
           <md-data-field field="meterid">Meter ID</md-data-field>
           <md-data-field field="manufacturer">Manufacturer</md-data-field>
           <md-data-field field="version">Version</md-data-field>
@@ -265,7 +289,7 @@ class MeterGateway extends MdCard {
           time:time,
         });
       }
-      this.find("#metertab").update(rows);
+      this.find("#metertable").update(rows);
     }
 
     this.attach(this.onreset, "click", "#reset");
@@ -438,6 +462,29 @@ class ConfigDialog extends MdDialog {
 }
 
 Component.register(ConfigDialog);
+
+class MeterCard extends MdCard {
+  render() {
+    let h = new Array();
+    h.push(`<md-card-toolbar>Meter</md-card-toolbar>`);
+    h.push('<div>');
+    h.push('<md-button id="optical" label="Optical reader"></md-button>');
+    h.push('</div>');
+    return h.join("");
+  }
+
+  onrendered() {
+    this.attach(this.onoptical, "click", "#optical");
+  }
+
+  async onoptical(e) {
+    let port = await navigator.serial.requestPort();
+    await port.open({baudRate: 2400});
+    console.log("port", port. port.getInfo());
+  }
+}
+
+Component.register(MeterCard);
 
 document.body.style = null;
 

@@ -146,6 +146,7 @@ def on_mqtt_message(client, userdata, msg):
     print("startup", gwid)
     gw = get_gateway(gwid)
     gw["lastseen"] = message["ts"]
+    gw["upsince"] = message["ts"]
     gw.update(message)
     state_updated()
   elif op == "inventory":
