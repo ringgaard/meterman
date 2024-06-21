@@ -12,7 +12,7 @@ const medium_table = {
   5: "Steam",
   6: "Hot Water",
   7: "Water",
-  8: "H.C.A.",
+  8: "HCA",
 }
 
 function pad2(num) {
@@ -140,7 +140,7 @@ class MeterGateways extends MdCard {
     h.push("<md-card-toolbar>Gateways</md-card-toolbar>");
     let gateways = this.state && this.state.gateways;
     if (gateways) {
-      let gwlist = Object.values(gateways).sort((a, b) => a.ts - b.ts);
+      let gwlist = Object.values(gateways).sort((a, b) => b.ts - a.ts);
       for (let gw of gwlist) {
         let cls = "entry" + (gw.gw == selected ? " selected" : "");
          h.push(`<div class="${cls}" gw="${gw.gw}">${gw.gw}</div>`);
@@ -267,14 +267,20 @@ class MeterGateway extends MdCard {
         let type = m.type || m.medium;
         type = medium_table[type] || type || "";
 
-        let reading = m.value;
-        if (reading && m.unit) {
-          reading = `${reading} ${m.unit}`;
+        let record;
+        if (m.reading) {
+          for (let r of m.reading) {
+            if (r.vif && (r.vif < 0x60 || r.vif == 0x6e)) {
+              record = r;
+              break;
+            }
+          }
         }
-        if (!reading && m.reading) {
-          let r = m.reading[0];
-          reading = r.value;
-          if (r.unit) reading = `${reading} ${r.unit}`;
+
+        let reading = "";
+        if (record) {
+          reading = record.value;
+          if (record.unit) reading = `${reading} ${record.unit}`;
         }
 
         let time = datestr(m.ts);
