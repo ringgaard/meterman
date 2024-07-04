@@ -43,8 +43,22 @@ flags.define("--appdir",
              default="/var/data/metermon",
              metavar="PATH")
 
+flags.define("--keys",
+             help="File with encryption keys for meters",
+             metavar="PATH")
+
 # Parse command line flags.
 flags.parse()
+
+# Read meter encryption keys.
+aeskeys = {}
+if flags.arg.keys:
+  with open(flags.arg.keys) as f:
+    for line in f.readlines():
+      line = line.strip()
+      if len(line) == 0 or line[0] == '#': continue
+      fields = line.split(' ')
+      aeskeys[int(fields[0])] = fields[1]
 
 # Initialize web server.
 app = sling.net.HTTPServer(flags.arg.port)
@@ -78,25 +92,27 @@ state = {
   "seq": 0,
   "software": "/meterman/download/metermon",
   "gateways": {},
+  "history": flags.arg.history,
 }
 
 gateways = state["gateways"]
+history = {}
 
-state_upate = threading.Event()
+state_update = threading.Event()
 
 def state_updated():
   global next_seq
   state["seq"] = next_seq
   next_seq += 1
-  state_upate.set()
-  state_upate.clear()
+  state_update.set()
+  state_update.clear()
 
 @app.route("/meterman/state", method="GET")
 def state_request(request):
   seq = int(request.param("seq"))
 
   # Wait for state update if client already has the current version.
-  if seq == state["seq"]: state_upate.wait(30)
+  if seq == state["seq"]: state_update.wait(30)
 
   # Return "Not modified" if no changes
   if seq == state["seq"]: return 304
@@ -120,7 +136,7 @@ def discard_reading(reading):
  if reading is None: return False
  if type(reading) is not list: return False
  if len(reading) == 0: return False
- return reading[0].get("vif") == 127
+ return reading[0].get("vif") == 127 and reading[0].get("value") != 0
 
 # Handle meter messages and update global state.
 def on_mqtt_message(client, userdata, msg):
@@ -158,7 +174,7 @@ def on_mqtt_message(client, userdata, msg):
       meterid = m["meterid"]
       meter = meters.get(meterid)
       if meter is None:
-        meter = {"readings": []}
+        meter = {}
         meters[meterid] = meter
       meter.update(m)
     state_updated()
@@ -171,13 +187,28 @@ def on_mqtt_message(client, userdata, msg):
     if meterid is None:
       print("missing meter id in reading")
       return
+
     meter = meters.get(meterid)
     if meter is None:
-      meter = {"readings": []}
+      meter = {}
       meters[meterid] = meter
+
+    if message.get("encrypted"):
+      key = aeskeys.get(meterid)
+      if key:
+        print("Send key to meter", meterid)
+        send_command(gw, {"op": "key", "meterid": meterid, "key": key})
+
     reading = message.get("reading")
-    if not discard_reading(reading): meter.update(message)
-    if flags.arg.history: meter["readings"].append(message)
+
+    if not discard_reading(reading):
+      meter["encrypted"] = False
+      meter.update(message)
+
+    if flags.arg.history:
+      if meterid not in history: history[meterid] = []
+      history[meterid].append(str(msg.payload.decode()))
+
     state_updated()
   elif op == "console":
     gw = get_gateway(gwid)
@@ -266,6 +297,13 @@ def log_request(request):
   gw = gateways.get(gwid)
   if gw is None: return 404
   send_command(gw, {"op": "log"})
+
+@app.route("/meterman/readings")
+def readings_request(request):
+  meterid = int(request.param("meterid"))
+  readings = history.get(meterid)
+  if readings is None: return 404
+  return {"meterid":  meterid, "readings": readings}
 
 @app.route("/meterman/download")
 def down_request(request):

@@ -13,6 +13,7 @@ const medium_table = {
   6: "Hot Water",
   7: "Water",
   8: "HCA",
+  22: "Cold Water",
 }
 
 function pad2(num) {
@@ -241,6 +242,7 @@ class MeterGateway extends MdCard {
           <md-data-field field="address">Address</md-data-field>
           <md-data-field field="reading" style="text-align: right">Reading</md-data-field>
           <md-data-field field="time">Time</md-data-field>
+          <md-data-field field="copy" html=1>Copy</md-data-field>
         </md-data-table>
       </div>
     `);
@@ -278,7 +280,9 @@ class MeterGateway extends MdCard {
         }
 
         let reading = "";
-        if (record) {
+        if (m.encrypted) {
+          reading = "(encrypted)";
+        } else if (record) {
           reading = record.value;
           if (record.unit) reading = `${reading} ${record.unit}`;
         }
@@ -292,7 +296,9 @@ class MeterGateway extends MdCard {
           bus: `${m.bus || ""} ${m.device || ""}`,
           address: m.address,
           reading: reading,
-          time:time,
+          time: time,
+          copy: `<md-icon-button icon="content_copy" meterid="${m.meterid}">
+                 </md-icon-button>`,
         });
       }
       this.find("#metertable").update(rows);
@@ -306,6 +312,7 @@ class MeterGateway extends MdCard {
     this.attach(this.onconfigure, "click", "#configure");
     this.attach(this.onrescan, "click", "#rescan");
     this.attach(this.onlog, "click", "#log");
+    this.attach(this.oncopy, "click", "#metertable");
   }
 
   async onreset(e) {
@@ -353,6 +360,25 @@ class MeterGateway extends MdCard {
     let dialog = new ConfigDialog(this.state.config);
     let config = await dialog.show();
     if (config) await this.command("config", config);
+  }
+
+  async oncopy(e) {
+    let button = e.target.closest("md-icon-button");
+    let meterid = button?.getAttribute("meterid");
+    if (!meterid) return;
+    let r = await fetch(`/meterman/readings?meterid=${meterid}`);
+    if (r.status == 404) {
+      // Just copy the current reading if server does not keep history.
+      let m = this.state.meters[meterid];
+      let text = JSON.stringify(m);
+      navigator.clipboard.writeText(text);
+    } else if (!r.ok) {
+      console.log("Error", r);
+    } else {
+      let reply = await r.json();
+      let text = reply.readings.join("\n") + "\n";
+      navigator.clipboard.writeText(text);
+    }
   }
 
   async command(cmd, body) {
