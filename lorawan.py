@@ -218,9 +218,9 @@ class LoRaServer:
     else:
       print("Unknown LoRa frame type", ft)
 
-lora = LoRaServer()
-reply, reading = lora.onreceive({'op': 'lora', 'gw': '1357', 'bus': 'LoRa', 'device': 'lora0', 'ts': 1727183838, 'payload': '00000000d92dd5b370ed0000d92dd5b37039b1d194614b'})
-print(reply)
+#lora = LoRaServer()
+#reply, reading = lora.onreceive({'op': 'lora', 'gw': '1357', 'bus': 'LoRa', 'device': 'lora0', 'ts': 1727183838, 'payload': '00000000d92dd5b370ed0000d92dd5b37039b1d194614b'})
+#print(reply)
 
 #reply, reading = onreceive({'op': 'lora', 'gw': '1357', 'bus': 'LoRa', 'device': 'lora0', 'ts': 1727183838, 'payload': '40F17DBE4900020001954378762B11FF0D'})
 

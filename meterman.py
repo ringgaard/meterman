@@ -142,37 +142,37 @@ def discard_reading(reading):
 
 # Handle meter messages and update global state.
 def on_mqtt_message(client, userdata, msg):
-  #print("message", msg.topic, msg.payload)
+  #log.info("message", msg.topic, msg.payload)
   try:
     message = json.loads(msg.payload)
   except Exception as e:
-    print("invalid JSON message:", msg.payload)
+    log.info("invalid JSON message:", msg.payload)
     return
 
   # TODO: TEST REMOVE
-  #if message.get("gw") != "1357": return
+  if message.get("gw") != "1357": return
 
-  print("message:", message)
+  log.info("message:", message)
 
   op = message.get("op")
   if op is None:
-    print("invalid message: missing op")
+    log.info("invalid message: missing op")
     return
 
   gwid = message.get("gw")
   if gwid is None:
-    print("invalid message: missing gateway id")
+    log.info("invalid message: missing gateway id")
     return
 
   if op == "startup":
-    print("startup", gwid)
+    log.info("startup", gwid)
     gw = get_gateway(gwid)
     gw["lastseen"] = message["ts"]
     gw["upsince"] = message["ts"]
     gw.update(message)
     state_updated()
   elif op == "inventory":
-    print("inventory", gwid)
+    log.info("inventory", gwid)
     gw = get_gateway(gwid)
     gw["lastseen"] = message["ts"]
     meters = gw["meters"]
@@ -187,22 +187,22 @@ def on_mqtt_message(client, userdata, msg):
   elif op == "lora":
     gw = get_gateway(gwid)
     gw["lastseen"] = message["ts"]
-    ret = lorawan.onreceive(message)
+    ret = lora.onreceive(message)
     if ret != None:
       reply = ret[0]
       reading = ret[1]
       if reply:
-        print("reply", reply)
+        log.info("reply", reply)
         send_command(gw, reply)
 
   elif op == "reading":
-    print("reading", gwid)
+    log.info("reading", gwid)
     gw = get_gateway(gwid)
     gw["lastseen"] = message["ts"]
     meters = gw["meters"]
     meterid = message.get("meterid")
     if meterid is None:
-      print("missing meter id in reading")
+      log.info("missing meter id in reading")
       return
 
     meter = meters.get(meterid)
@@ -213,7 +213,7 @@ def on_mqtt_message(client, userdata, msg):
     if message.get("encrypted"):
       key = aeskeys.get(meterid)
       if key:
-        print("Send key to meter", meterid)
+        log.info("Send key to meter", meterid)
         send_command(gw, {"op": "key", "meterid": meterid, "key": key})
 
     reading = message.get("reading")
@@ -233,7 +233,7 @@ def on_mqtt_message(client, userdata, msg):
     gw["console"] = console
     state_updated()
   else:
-    print("unknown message type:", op, "from", gwid)
+    log.info("unknown message type:", op, "from", gwid)
 
 # Start MQTT client.
 mqttc = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
@@ -296,7 +296,7 @@ def config_request(request):
   config = request.body.decode()
   gw = gateways.get(gwid)
   if gw is None: return 404
-  print("config:", config)
+  log.info("config:", config)
 
   msg = {"op": "config", "config": config}
   send_command(gw, msg)
