@@ -22,6 +22,8 @@ import sling.flags as flags
 import sling.log as log
 import sling.net
 
+import lorawan
+
 flags.define("--port",
              help="port number for the HTTP server",
              default=8080,
@@ -97,7 +99,7 @@ state = {
 
 gateways = state["gateways"]
 history = {}
-
+lora = lorawan.LoRaServer()
 state_update = threading.Event()
 
 def state_updated():
@@ -146,6 +148,10 @@ def on_mqtt_message(client, userdata, msg):
   except Exception as e:
     print("invalid JSON message:", msg.payload)
     return
+
+  # TODO: TEST REMOVE
+  #if message.get("gw") != "1357": return
+
   print("message:", message)
 
   op = message.get("op")
@@ -178,6 +184,17 @@ def on_mqtt_message(client, userdata, msg):
         meters[meterid] = meter
       meter.update(m)
     state_updated()
+  elif op == "lora":
+    gw = get_gateway(gwid)
+    gw["lastseen"] = message["ts"]
+    ret = lorawan.onreceive(message)
+    if ret != None:
+      reply = ret[0]
+      reading = ret[1]
+      if reply:
+        print("reply", reply)
+        send_command(gw, reply)
+
   elif op == "reading":
     print("reading", gwid)
     gw = get_gateway(gwid)
