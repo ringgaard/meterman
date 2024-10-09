@@ -233,7 +233,7 @@ class LoRaServer:
 # See: https://github.com/anthonykirby/lora-packet/issues/10
 #ret = lora.onreceive({'op': 'lora', 'gw': '1357', 'bus': 'LoRa', 'device': 'lora0', 'ts': 1727183838, 'payload': '00DC0000D07ED5B3701E6FEDF57CEEAF0085CC587FE913'})
 
-print(ret)
+#print(ret)
 
 #buffer =  bytes.fromhex('01fea9b800000081f100000000000000')
 #key =  bytes.fromhex('5201b4da2b4d5a62041f539cfe3fb40d')
