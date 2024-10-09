@@ -23,7 +23,6 @@ import os.path
 from Crypto.Hash import CMAC
 from Crypto.Cipher import AES
 from Crypto.Random import get_random_bytes
-from Crypto.Util.Padding import pad
 
 # LoRaWAN frame types.
 LW_JOIN_REQUEST      = 0
@@ -39,9 +38,22 @@ lora_sessions_file = "local/lora-sessions.txt"
 def reverse(b):
   return bytes(reversed(b))
 
+def hexstr(eui):
+  return eui.hex().upper()
+
+def euistr(eui):
+  return hexstr(reverse(eui))
+
+def pad(data, blksiz):
+  n = len(data) % 16
+  if n == 0:
+    return data
+  else:
+    return data + bytes(16 - n)
+
 def aes128_encrypt(key, data):
   ctx = AES.new(key, AES.MODE_ECB)
-  return ctx.encrypt(pad(data, AES.block_size))
+  return ctx.encrypt(data)
 
 def aes128_decrypt(key, data):
   ctx = AES.new(key, AES.MODE_ECB)
@@ -52,12 +64,6 @@ def aes128_cmac(key, data):
   ctx.update(data)
   return ctx.digest()
 
-def hexstr(eui):
-  return eui.hex().upper()
-
-def euistr(eui):
-  return hexstr(reverse(eui))
-
 class LoRaDevice:
   def __init__(self, config):
     self.deveui = reverse(bytes.fromhex(config["deveui"]))
@@ -66,32 +72,35 @@ class LoRaDevice:
     self.netid = bytes.fromhex(config["netid"])
     self.devaddr = bytes.fromhex(config["devaddr"])
     self.join_eui = None
-    self.dev_nounce = None
-    self.join_nounce = None
+    self.devnonce = None
+    self.appnonce = None
     self.nwkskey = None
     self.appskey = None
+    if "appnonce" in config:
+      self.appnonce = bytes.fromhex(config["appnonce"])
 
   def add_session(self, session):
-    self.dev_nounce = bytes.fromhex(session["devnounce"])
-    self.join_nounce = bytes.fromhex(session["joinnounce"])
+    self.devnonce = bytes.fromhex(session["devnonce"])
+    self.appnonce = bytes.fromhex(session["appnonce"])
     self.nwkskey = bytes.fromhex(session["nwkskey"])
     self.appskey = bytes.fromhex(session["appskey"])
 
-  def generate_session_keys(self, dev_nounce):
-    # Generate random nounce.
-    self.dev_nounce = dev_nounce
-    self.join_nounce = get_random_bytes(3)
+  def generate_session_keys(self, devnonce):
+    # Generate random nonce.
+    self.devnonce = devnonce
+    if self.appnonce is None:
+      self.appnonce = get_random_bytes(3)
 
     # Compute network and app session keys.
-    nounces = self.join_nounce + self.netid + self.dev_nounce
-    self.nwkskey = aes128_encrypt(self.appkey, b'\0' + nounces)
-    self.appskey = aes128_encrypt(self.appkey, b'\1' + nounces)
+    nonces = self.appnonce + self.netid + self.devnonce
+    self.nwkskey = aes128_encrypt(self.appkey, pad(b'\1' + nonces, 16))
+    self.appskey = aes128_encrypt(self.appkey, pad(b'\2' + nonces, 16))
 
     # Append keys to session file.
     session = {
       "deveui": hexstr(self.deveui),
-      "devnounce": hexstr(self.dev_nounce),
-      "joinnounce": hexstr(self.join_nounce),
+      "devnonce": hexstr(self.devnonce),
+      "appnonce": hexstr(self.appnonce),
       "nwkskey": hexstr(self.nwkskey),
       "appskey": hexstr(self.appskey),
     }
@@ -105,13 +114,14 @@ class LoRaServer:
     self.loradevs = {}
 
     # Read LoRa keys and sessions.
-    with open(lora_keys_file) as f:
-      for line in f.readlines():
-        line = line.strip()
-        if len(line) == 0 or line[0] == '#': continue
-        config = json.loads(line)
-        dev = LoRaDevice(config)
-        self.loradevs[dev.deveui] = dev
+    if os.path.exists(lora_keys_file):
+      with open(lora_keys_file) as f:
+        for line in f.readlines():
+          line = line.strip()
+          if len(line) == 0 or line[0] == '#': continue
+          config = json.loads(line)
+          dev = LoRaDevice(config)
+          self.loradevs[dev.deveui] = dev
 
     if os.path.exists(lora_sessions_file):
       with open(lora_sessions_file) as f:
@@ -133,16 +143,16 @@ class LoRaServer:
 
     join_eui = payload[1:9]
     dev_eui = payload[9:17]
-    dev_nounce = payload[17:19]
+    devnonce = payload[17:19]
     mic = payload[19:23]
 
-    print("LoRaWAN join request server %s device %s nounce %s mic %s" %
-          (euistr(join_eui), euistr(dev_eui), hexstr(dev_nounce), hexstr(mic)))
+    print("LoRaWAN join request server %s device %s nonce %s mic %s" %
+          (euistr(join_eui), euistr(dev_eui), hexstr(devnonce), hexstr(mic)))
 
     # Look up device configuration.
     device = self.loradevs.get(dev_eui)
     if device is None:
-      print("Unknown LoRa device join", hexstr(dev_eui))
+      print("Unknown LoRa device join", hexstr(reverse(dev_eui)))
       return
 
     # Verify MIC.
@@ -152,16 +162,15 @@ class LoRaServer:
       return
 
     # Compute network and server session keys.
-    device.generate_session_keys(dev_nounce)
-    print("nwkskey:", hexstr(device.nwkskey))
-    print("appskey:", hexstr(device.appskey))
+    device.generate_session_keys(devnonce)
 
     # Generate Join-Accept payload.
     # JoinNonce(3) NetID(3) DevAddr(4) DLSettings(1) RXDelay(1) CFList(opt)
     dl_settings = 0
     rx_delay = 0
-    accept = device.join_nounce + device.netid + device.devaddr + \
-             bytes([dl_settings, rx_delay])
+    cf_list = b'' # b'\0' * 16
+    accept = device.appnonce + device.netid + device.devaddr + \
+             bytes([dl_settings, rx_delay]) + cf_list
 
     # Compute MIC for Join-Accept accept frame.
     mhdr = b'\x20'
@@ -172,7 +181,7 @@ class LoRaServer:
     # frame so that the end-device can use an AES encrypt operation to
     # decrypt the frame. This way, an end-device has to implement only AES
     # encrypt but not AES decrypt.
-    packet = mhdr + aes128_decrypt(device.appkey, pad(accept + cmac[0:4], 16))
+    packet = mhdr + aes128_decrypt(device.appkey, accept + cmac[0:4])
 
     print("JOIN accept:", hexstr(packet))
     reply = {
@@ -219,8 +228,16 @@ class LoRaServer:
       print("Unknown LoRa frame type", ft)
 
 #lora = LoRaServer()
-#reply, reading = lora.onreceive({'op': 'lora', 'gw': '1357', 'bus': 'LoRa', 'device': 'lora0', 'ts': 1727183838, 'payload': '00000000d92dd5b370ed0000d92dd5b37039b1d194614b'})
-#print(reply)
+#ret = lora.onreceive({'op': 'lora', 'gw': '1357', 'bus': 'LoRa', 'device': 'lora0', 'ts': 1727183838, 'payload': '00000000d92dd5b370ed0000d92dd5b37081f17c2bf1f2'})
 
-#reply, reading = onreceive({'op': 'lora', 'gw': '1357', 'bus': 'LoRa', 'device': 'lora0', 'ts': 1727183838, 'payload': '40F17DBE4900020001954378762B11FF0D'})
+# See: https://github.com/anthonykirby/lora-packet/issues/10
+#ret = lora.onreceive({'op': 'lora', 'gw': '1357', 'bus': 'LoRa', 'device': 'lora0', 'ts': 1727183838, 'payload': '00DC0000D07ED5B3701E6FEDF57CEEAF0085CC587FE913'})
+
+print(ret)
+
+#buffer =  bytes.fromhex('01fea9b800000081f100000000000000')
+#key =  bytes.fromhex('5201b4da2b4d5a62041f539cfe3fb40d')
+#encrypted = aes128_encrypt(key, buffer)
+#print("encrypted", hexstr(encrypted))
+#print("expected ", "841b3252f2e205b6071a9a0320986b27")
 
