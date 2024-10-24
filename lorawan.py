@@ -44,7 +44,7 @@ def hexstr(eui):
 def euistr(eui):
   return hexstr(reverse(eui))
 
-def pad(data, blksiz):
+def zeropad(data, blksiz):
   n = len(data) % 16
   if n == 0:
     return data
@@ -93,8 +93,8 @@ class LoRaDevice:
 
     # Compute network and app session keys.
     nonces = self.appnonce + self.netid + self.devnonce
-    self.nwkskey = aes128_encrypt(self.appkey, pad(b'\1' + nonces, 16))
-    self.appskey = aes128_encrypt(self.appkey, pad(b'\2' + nonces, 16))
+    self.nwkskey = aes128_encrypt(self.appkey, zeropad(b'\1' + nonces, 16))
+    self.appskey = aes128_encrypt(self.appkey, zeropad(b'\2' + nonces, 16))
 
     # Append keys to session file.
     session = {

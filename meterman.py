@@ -149,9 +149,6 @@ def on_mqtt_message(client, userdata, msg):
     log.info("invalid JSON message:", msg.payload)
     return
 
-  # TODO: TEST REMOVE
-  if message.get("gw") != "1357": return
-
   log.info("message:", message)
 
   op = message.get("op")
@@ -331,4 +328,3 @@ def down_request(request):
 log.info("running")
 app.start()
 mqttc.loop_forever()
-
